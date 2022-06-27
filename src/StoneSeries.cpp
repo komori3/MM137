@@ -197,8 +197,16 @@ using pii = std::pair<int, int>;
 #undef ENABLE_DUMP
 #endif
 
-constexpr int di8[] = { 0, -1, -1, -1, 0, 1, 1, 1 };
-constexpr int dj8[] = { 1, 1, 0, -1, -1, -1, 0, 1 };
+constexpr int MAX_N = 40;
+constexpr int MAX_T = MAX_N * MAX_N;
+constexpr int SHIFT = 6;
+constexpr int WP = (1 << SHIFT);
+constexpr int SP = WP * (MAX_N + 2);
+constexpr int d8[] = { 1, 1 - WP, -WP, -1 - WP, -1, -1 + WP, WP, 1 + WP };
+
+inline int enc(int i, int j) { return (i << SHIFT) | j; }
+inline std::pair<int, int> dec(int p) { return { p >> SHIFT, p & ((1 << SHIFT) - 1) }; }
+
 using cell_t = short;
 constexpr cell_t WALL = -1;
 constexpr cell_t NONE = 0;
@@ -225,18 +233,14 @@ struct Input {
     }
 };
 
-
-
-uint64_t g_hash_table[42][42][1600];
+uint64_t g_hash_table[SP][MAX_T];
 
 struct HashSetup {
     HashSetup() {
         std::mt19937_64 engine;
-        for (int i = 0; i < 42; i++) {
-            for (int j = 0; j < 42; j++) {
-                for (int k = 0; k < 1600; k++) {
-                    g_hash_table[i][j][k] = engine();
-                }
+        for (int p = 0; p < SP; p++) {
+            for (int t = 0; t < MAX_T; t++) {
+                g_hash_table[p][t] = engine();
             }
         }
     }
@@ -249,77 +253,36 @@ struct State {
     int largest;
     int score;
     uint64_t hash;
-    std::array<std::array<cell_t, 42>, 42> grid;
-    //vector<vector<cell_t>> grid;
+    std::array<cell_t, SP> grid;
+    std::array<cell_t, SP> ctrs;
+    std::array<cell_t, SP> sums;
     State(InputPtr input) :
         N(input->N), largest(0), score(0), hash(0) {
-        for (int i = 0; i < 42; i++) for (int j = 0; j < 42; j++) grid[i][j] = WALL;
+        std::fill(grid.begin(), grid.end(), WALL);
+        std::fill(ctrs.begin(), ctrs.end(), 0);
+        std::fill(sums.begin(), sums.end(), 0);
         for (int i = 1; i <= N; i++) {
             for (int j = 1; j <= N; j++) {
-                grid[i][j] = input->S[i - 1][j - 1] == '.' ? NONE : WALL;
+                grid[enc(i, j)] = input->S[i - 1][j - 1] == '.' ? NONE : WALL;
             }
         }
     }
-    int calc_space() const {
-        int num_space = 0;
-        for (int i = 1; i <= N; i++) {
-            for (int j = 1; j <= N; j++) {
-                num_space += grid[i][j] == NONE;
-            }
-        }
-        return num_space;
+    int can_move(int p) const {
+        if (grid[p]) return 0;
+        if (!(sums[p] | ctrs[p])) return 1;
+        if (ctrs[p] <= 1) return 0;
+        return sums[p] <= largest + 1 ? sums[p] : 0;
     }
-    int can_move(int i, int j) const {
-        if (grid[i][j]) return 0;
-        int sum = 0, ctr = 0;
-        for (int d = 0; d < 8; d++) {
-            int ni = i + di8[d], nj = j + dj8[d];
-            ctr += grid[ni][nj] > 0;
-            sum += std::max(cell_t(0), grid[ni][nj]);
-        }
-        if (!sum && !ctr) return 1;
-        if (ctr <= 1) return 0;
-        return sum <= largest + 1 ? sum : 0;
-    }
-    inline uint64_t calc_hash(int i, int j, int num) const {
-        return hash ^ g_hash_table[i][j][num];
-    }
-    bool do_best_move() {
-        int best_num = -1, best_i = -1, best_j = -1;
-        for (int i = 1; i <= N; i++) {
-            for (int j = 1; j <= N; j++) {
-                int num = -1;
-                if (num = can_move(i, j)) {
-                    if (chmax(best_num, num)) {
-                        best_i = i;
-                        best_j = j;
-                    }
-                }
-            }
-        }
-        if (best_num == -1) return false;
-        move(best_i, best_j, best_num);
-        return true;
-    }
-    void move(int i, int j, int num) {
+    void move(int p, int num) {
         chmax(largest, num);
         score += num;
-        grid[i][j] = num;
-        hash ^= g_hash_table[i][j][num];
-    }
-    vector<StatePtr> enum_all_next_states() {
-        vector<StatePtr> res;
-        for (int i = 1; i <= N; i++) {
-            for (int j = 1; j <= N; j++) {
-                int num = -1;
-                if (num = can_move(i, j)) {
-                    StatePtr ns = std::make_shared<State>(*this);
-                    ns->move(i, j, num);
-                    res.push_back(ns);
-                }
-            }
+        grid[p] = num;
+        for (int d = 0; d < 8; d++) {
+            int np = p + d8[d];
+            ctrs[np]++;
+            sums[np] += num;
         }
-        return res;
+        hash ^= g_hash_table[p][num];
     }
     string stringify() const {
         string res;
@@ -331,7 +294,8 @@ struct State {
         for (int i = 1; i <= N; i++) {
             res += '|';
             for (int j = 1; j <= N; j++) {
-                res += grid[i][j] == WALL ? "###|" : (grid[i][j] == NONE ? "   |" : format("%3d|", grid[i][j]));
+                int p = enc(i, j);
+                res += grid[p] == WALL ? "###|" : (grid[p] == NONE ? "   |" : format("%3d|", grid[p]));
             }
             res += '\n';
             res += line;
@@ -343,8 +307,9 @@ struct State {
         vector<vector<pii>> buckets(largest + 1);
         for (int i = 1; i <= N; i++) {
             for (int j = 1; j <= N; j++) {
-                if (grid[i][j] > 0) {
-                    buckets[grid[i][j]].emplace_back(i - 1, j - 1);
+                int p = enc(i, j);
+                if (grid[p] > 0) {
+                    buckets[grid[p]].emplace_back(i - 1, j - 1);
                     placed++;
                 }
             }
@@ -363,12 +328,7 @@ std::ostream& operator<<(std::ostream& o, const StatePtr& s) {
     return o;
 }
 
-StatePtr greedy(StatePtr state) {
-    while (state->do_best_move());
-    return state;
-}
-
-StatePtr beam_search(StatePtr init_state, int beam_width = 500) {
+StatePtr beam_search(StatePtr init_state, int beam_width = 1000) {
 
     struct Cmp {
         bool operator()(const StatePtr& a, const StatePtr& b) const {
@@ -377,7 +337,7 @@ StatePtr beam_search(StatePtr init_state, int beam_width = 500) {
     };
 
     std::set<StatePtr, Cmp> now_states({ init_state });
-    StatePtr best_state = init_state;
+    auto best_state = init_state;
     const int N = init_state->N;
     while (true) {
         if (now_states.empty()) break;
@@ -387,17 +347,17 @@ StatePtr beam_search(StatePtr init_state, int beam_width = 500) {
             auto now_state = *now_states.begin(); now_states.erase(now_states.begin());
             for (int r = 1; r <= N; r++) {
                 for (int c = 1; c <= N; c++) {
-                    int num = -1;
-                    if (num = now_state->can_move(r, c)) {
+                    int p = enc(r, c), num = -1;
+                    if (num = now_state->can_move(p)) {
                         int score = now_state->score + num;
                         if (next_states.size() < beam_width) {
-                            StatePtr ns = std::make_shared<State>(*now_state);
-                            ns->move(r, c, num);
+                            auto ns = std::make_shared<State>(*now_state);
+                            ns->move(p, num);
                             next_states.insert(ns);
                         }
                         else if ((*std::prev(next_states.end()))->score < score) {
-                            StatePtr ns = std::make_shared<State>(*now_state);
-                            ns->move(r, c, num);
+                            auto ns = std::make_shared<State>(*now_state);
+                            ns->move(p, num);
                             next_states.insert(ns);
                         }
                     }
@@ -414,8 +374,6 @@ StatePtr beam_search(StatePtr init_state, int beam_width = 500) {
 
     return best_state;
 }
-
-
 
 int main(int argc, char** argv) {
 
@@ -441,7 +399,6 @@ int main(int argc, char** argv) {
 
     auto state = std::make_shared<State>(input);
     auto best_state = beam_search(state);
-    //auto best_state = greedy(state);
 
     dump(best_state->score);
     best_state->output(out);
