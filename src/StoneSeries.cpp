@@ -199,15 +199,15 @@ using pii = std::pair<int, int>;
 
 constexpr int MAX_N = 40;
 constexpr int MAX_T = MAX_N * MAX_N;
-constexpr int SHIFT = 6;
-constexpr int WP = (1 << SHIFT);
+constexpr int WP = MAX_N + 2;
 constexpr int SP = WP * (MAX_N + 2);
 constexpr int d8[] = { 1, 1 - WP, -WP, -1 - WP, -1, -1 + WP, WP, 1 + WP };
 
-inline int enc(int i, int j) { return (i << SHIFT) | j; }
-inline std::pair<int, int> dec(int p) { return { p >> SHIFT, p & ((1 << SHIFT) - 1) }; }
+inline int enc(int i, int j) { return i * WP + j; }
+inline std::pair<int, int> dec(int p) { return { p / WP, p % WP }; }
 
 using cell_t = short;
+using ctr_t = uint8_t;
 constexpr cell_t WALL = -1;
 constexpr cell_t NONE = 0;
 
@@ -244,7 +244,7 @@ struct HashSetup {
             }
         }
     }
-} hash_setup;
+};
 
 struct State;
 using StatePtr = std::shared_ptr<State>;
@@ -254,7 +254,7 @@ struct State {
     int score;
     uint64_t hash;
     std::array<cell_t, SP> grid;
-    std::array<cell_t, SP> ctrs;
+    std::array<ctr_t, SP> ctrs;
     std::array<cell_t, SP> sums;
     State(InputPtr input) :
         N(input->N), largest(0), score(0), hash(0) {
@@ -328,7 +328,9 @@ std::ostream& operator<<(std::ostream& o, const StatePtr& s) {
     return o;
 }
 
-StatePtr beam_search(StatePtr init_state, int beam_width = 1000) {
+StatePtr beam_search(StatePtr init_state, int beam_width = 1000, double duration = 9500) {
+
+    Timer timer;
 
     struct Cmp {
         bool operator()(const StatePtr& a, const StatePtr& b) const {
@@ -339,8 +341,10 @@ StatePtr beam_search(StatePtr init_state, int beam_width = 1000) {
     std::set<StatePtr, Cmp> now_states({ init_state });
     auto best_state = init_state;
     const int N = init_state->N;
+    int turn = 0;
     while (true) {
         if (now_states.empty()) break;
+        turn++;
         std::set<StatePtr, Cmp> next_states;
         for (int i = 0; i < beam_width; i++) {
             if (now_states.empty()) break;
@@ -364,11 +368,11 @@ StatePtr beam_search(StatePtr init_state, int beam_width = 1000) {
                 }
             }
         }
-        if (next_states.empty()) break;
+        if (next_states.empty() || timer.elapsed_ms() > duration) break;
         now_states.swap(next_states);
         if (best_state->score < (*now_states.begin())->score) {
             best_state = *now_states.begin();
-            dump(best_state->score);
+            dump(turn, timer.elapsed_ms(), best_state->score);
         }
     }
 
@@ -393,12 +397,13 @@ int main(int argc, char** argv) {
     std::ostream& out = cout;
 #endif
 
+    HashSetup();
     auto input = std::make_shared<Input>(in);
-
-    dump(*input);
-
     auto state = std::make_shared<State>(input);
-    auto best_state = beam_search(state);
+
+    constexpr int width = 1000;
+    const double duration = 9500 - timer.elapsed_ms();
+    auto best_state = beam_search(state, width, duration);
 
     dump(best_state->score);
     best_state->output(out);
