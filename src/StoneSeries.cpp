@@ -220,6 +220,13 @@ struct Input {
 };
 
 uint64_t g_hash_table[42*42][40*40];
+int g_beamwidth[] = {
+    -1,-1,-1,-1,-1,-1,-1,-1,30000,25000,
+    20000,15000,12000,11000,10000,9000,8000,7000,6000,5000,
+    4500,4000,3500,3000,2700,2500,2200,1900,1700,1500,
+    1400,1300,1200,1100,1000,950,900,850,800,750,
+    700
+};
 
 struct HashSetup {
     HashSetup() {
@@ -394,9 +401,8 @@ struct Solver {
 
         auto state = std::make_shared<State>(input);
 
-        constexpr int width = 1000;
         const double duration = 9500 - timer.elapsed_ms();
-        auto best_state = beam_search(state, width, duration);
+        auto best_state = beam_search(state, g_beamwidth[N], duration);
 
         dump(best_state->score);
         best_state->output(out);
