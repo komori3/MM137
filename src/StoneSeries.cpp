@@ -211,6 +211,15 @@ struct Input {
             }
         }
     }
+    double calc_sparseness() const {
+        int space = 0;
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j < N; j++) {
+                space += S[i][j] == '.';
+            }
+        }
+        return space / double(N * N);
+    }
     string stringify() const {
         string res;
         res += std::to_string(N) + '\n';
@@ -402,7 +411,8 @@ struct Solver {
         auto state = std::make_shared<State>(input);
 
         const double duration = 9500 - timer.elapsed_ms();
-        auto best_state = beam_search(state, g_beamwidth[N], duration);
+        int beam_width = (int)round(g_beamwidth[N] / input->calc_sparseness());
+        auto best_state = beam_search(state, beam_width, duration);
 
         dump(best_state->score);
         best_state->output(out);
