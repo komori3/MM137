@@ -153,7 +153,7 @@ struct Xorshift {
     inline int next_int() { return next() & M; }
     inline int next_int(int mod) { return next() % mod; }
     inline int next_int(int l, int r) { return l + next_int(r - l + 1); }
-    double next_double() { return next_int() * e; }
+    inline double next_double() { return next_int() * e; }
 } rnd;
 
 /* shuffle */
@@ -287,6 +287,10 @@ struct Solver {
             }
         }
 
+        inline int eval() const {
+            return score + largest * largest;
+        }
+
         int can_move(int p) const {
             if (grid[p]) return 0;
             if (!(sums[p] | ctrs[p])) return 1;
@@ -358,7 +362,7 @@ struct Solver {
 
         struct Cmp {
             bool operator()(const StatePtr& a, const StatePtr& b) const {
-                return a->score == b->score ? a->hash < b->hash : a->score > b->score;
+                return a->eval() == b->eval() ? a->hash < b->hash : a->eval() > b->eval();
             }
         };
 
@@ -376,13 +380,14 @@ struct Solver {
                     for (int c = 1; c <= N; c++) {
                         int p = enc(r, c), num = -1;
                         if (num = now_state->can_move(p)) {
-                            int score = now_state->score + num;
+                            int largest = std::max(num, now_state->largest);
+                            int eval = now_state->score + num + largest * largest;
                             if (next_states.size() < beam_width) {
                                 auto ns = std::make_shared<State>(*now_state);
                                 ns->move(p, num);
                                 next_states.insert(ns);
                             }
-                            else if ((*std::prev(next_states.end()))->score < score) {
+                            else if ((*std::prev(next_states.end()))->eval() < eval) {
                                 auto ns = std::make_shared<State>(*now_state);
                                 ns->move(p, num);
                                 next_states.insert(ns);
@@ -391,7 +396,7 @@ struct Solver {
                     }
                 }
             }
-            if (next_states.empty() || timer.elapsed_ms() > duration) break;
+            if (next_states.empty() /*|| timer.elapsed_ms() > duration*/) break;
             now_states.swap(next_states);
             if (best_state->score < (*now_states.begin())->score) {
                 best_state = *now_states.begin();
